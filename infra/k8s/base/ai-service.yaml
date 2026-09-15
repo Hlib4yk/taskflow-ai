@@ -23,6 +23,10 @@ spec:
               valueFrom: { secretKeyRef: { name: taskflow-secrets, key: RABBITMQ_URL } }
             - name: ANTHROPIC_API_KEY
               valueFrom: { secretKeyRef: { name: taskflow-secrets, key: ANTHROPIC_API_KEY } }
+            - name: BULL_BOARD_USER
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: BULL_BOARD_USER } }
+            - name: BULL_BOARD_PASSWORD
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: BULL_BOARD_PASSWORD } }
           readinessProbe:
             httpGet: { path: /health, port: 3002 }
             initialDelaySeconds: 15

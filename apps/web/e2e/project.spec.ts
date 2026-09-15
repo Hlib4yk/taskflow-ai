@@ -26,6 +26,9 @@ test("create a project, add a task, and see it appear on the board", async ({ pa
   await page.getByPlaceholder("New task title").fill("Write the launch email");
   await page.getByRole("button", { name: "Add task" }).click();
   await expect(page.getByText("Write the launch email")).toBeVisible();
+
+  await page.getByRole("button", { name: "Reindex" }).click();
+  await expect(page.getByText(/Queued job/)).toBeVisible();
 });
 
 test("the AI assistant streams a reply from a stubbed chat endpoint", async ({ page }) => {

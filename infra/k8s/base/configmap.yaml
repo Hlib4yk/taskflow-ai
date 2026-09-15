@@ -26,3 +26,4 @@ data:
   JWT_ACCESS_TTL: "15m"
   JWT_REFRESH_TTL: "7d"
   LLM_MODEL: "claude-sonnet-5"
+  DIGEST_INTERVAL_MS: "60000"

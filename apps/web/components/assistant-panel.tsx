@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import type { TaskDto } from "@taskflow/types";
 import { apiFetch } from "@/lib/api";
@@ -33,6 +33,10 @@ export function AssistantPanel({ projectId }: { projectId: string }) {
   const [goal, setGoal] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
+
+  const reindex = useMutation({
+    mutationFn: () => apiFetch<{ jobId: string }>(`/projects/${projectId}/reindex`, { method: "POST" }),
+  });
 
   async function onSendMessage(e: FormEvent) {
     e.preventDefault();
@@ -147,7 +151,19 @@ export function AssistantPanel({ projectId }: { projectId: string }) {
       </Card>
 
       <Card>
-        <h2 className="font-medium">Live activity</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium">Live activity</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => reindex.mutate()}
+            disabled={reindex.isPending}
+            title="Re-embed every task/comment in this project into Qdrant (runs as a background job)"
+          >
+            {reindex.isPending ? "Queuing…" : "Reindex"}
+          </Button>
+        </div>
+        {reindex.data && <p className="mt-1 text-xs text-slate-500">Queued job {reindex.data.jobId}</p>}
         <ul className="mt-3 space-y-1 text-xs text-slate-500">
           {activity.length === 0 && <li>No activity yet.</li>}
           {activity.map((event, i) => (

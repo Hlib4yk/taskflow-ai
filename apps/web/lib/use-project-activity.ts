@@ -26,6 +26,7 @@ export function useProjectActivity(projectId: string | undefined) {
     socket.on("task.created", track("task.created"));
     socket.on("task.updated", track("task.updated"));
     socket.on("comment.created", track("comment.created"));
+    socket.on("digest.ready", track("digest.ready"));
 
     return () => {
       socket.disconnect();

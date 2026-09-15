@@ -67,6 +67,7 @@ flowchart LR
 | Backend           | NestJS 10, TypeScript everywhere, Zod-validated shared DTOs    |
 | Data              | PostgreSQL + Prisma, Redis                                     |
 | Messaging         | RabbitMQ (`@nestjs/microservices`)                              |
+| Background jobs   | BullMQ (`@nestjs/bullmq`) — Redis-backed reindex queue (ai-service) + repeatable digest job (notifications-service), Bull Board admin UI |
 | AI / RAG          | Claude (`@anthropic-ai/sdk`), Qdrant, transformers.js embeddings |
 | Realtime          | Socket.IO                                                       |
 | Monorepo          | Turborepo + pnpm workspaces                                     |
@@ -117,6 +118,9 @@ Then open:
 - **http://localhost:16686** — Jaeger (distributed traces)
 - **http://localhost:9090** — Prometheus
 - **http://localhost:3300** — Grafana (anonymous viewer access, pre-provisioned dashboard)
+- **http://localhost:3002/admin/queues** — Bull Board for ai-service's `reindex` queue
+- **http://localhost:3003/admin/queues** — Bull Board for notifications-service's `digest` queue
+  (both behind HTTP Basic Auth — `BULL_BOARD_USER` / `BULL_BOARD_PASSWORD`, default `admin`/`admin`)
 
 For day-to-day development without Docker, `pnpm dev` runs every app via
 Turborepo (point `.env` at `localhost` instead of container hostnames first).
@@ -166,6 +170,26 @@ All three run in CI (`.github/workflows/ci.yml`) on every push/PR.
   preload only applies to the compiled Docker image; run `pnpm docker:up`
   to see any of this.
 
+## Background jobs
+
+- **Reindex** (ai-service): `POST /projects/:id/reindex` through the gateway
+  (or the "Reindex" button on a project page) enqueues a BullMQ job that
+  fetches every task/comment for that project straight from tasks-service
+  and re-embeds them into Qdrant — the kind of bulk work that shouldn't
+  block a request, per the scaffold's own original "Where to go next" list.
+- **Digest** (notifications-service): a repeatable job (`DIGEST_INTERVAL_MS`,
+  default 60s) drains a Redis-backed per-project activity counter — filled
+  in by the same RabbitMQ event handlers that already drive the live
+  activity feed — and emits a `digest.ready` event over the existing
+  Socket.IO project room. It's a stand-in for a real digest-email provider,
+  not a fake email send; the frontend's "Live activity" list already
+  renders it alongside `task.created`/`comment.created`.
+- Both queues get a **Bull Board** admin UI at `/admin/queues` (Basic Auth,
+  see `BULL_BOARD_USER`/`BULL_BOARD_PASSWORD`) for inspecting job status,
+  retries, and failures.
+- This is also the first real use of the Redis instance the compose stack
+  always provisioned — previously declared but never wired into any service.
+
 ## Deploying to Kubernetes
 
 ```bash
@@ -206,8 +230,6 @@ reach for them:
   by hand; Renovate/Dependabot for dependency PRs.
 - **IaC**: Terraform or Pulumi for the actual cluster/managed Postgres/DNS,
   rather than assuming a cluster already exists.
-- **Background jobs**: BullMQ (Redis-backed) for anything that shouldn't
-  block a request — bulk re-indexing, digest emails.
 - **Auth hardening**: OAuth/social login via Auth.js or Clerk if you don't
   want to own password storage; short-lived access tokens are already in
   place, refresh-token rotation is a good next step.

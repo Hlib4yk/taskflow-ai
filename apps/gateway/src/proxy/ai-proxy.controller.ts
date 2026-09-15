@@ -1,5 +1,5 @@
 import { HttpService } from "@nestjs/axios";
-import { Body, Controller, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Param, ParseUUIDPipe, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Request, Response } from "express";
 import { firstValueFrom } from "rxjs";
@@ -41,6 +41,23 @@ export class AiProxyController {
       this.http.post(`${this.baseUrl}/subtasks/generate`, body, {
         headers: { "x-user-id": user.userId, "x-request-id": req.headers["x-request-id"] },
       }),
+    );
+    return response.data;
+  }
+
+  /** Enqueues a bulk re-index of a project's tasks/comments into Qdrant (see ai-service's BullMQ "reindex" queue). */
+  @Post("projects/:projectId/reindex")
+  async reindex(
+    @Req() req: Request,
+    @Param("projectId", ParseUUIDPipe) projectId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const response = await firstValueFrom(
+      this.http.post(
+        `${this.baseUrl}/reindex/${projectId}`,
+        {},
+        { headers: { "x-user-id": user.userId, "x-request-id": req.headers["x-request-id"] } },
+      ),
     );
     return response.data;
   }
