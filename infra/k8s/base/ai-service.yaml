@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: taskflow-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ai-service }
+  template:
+    metadata:
+      labels: { app: ai-service }
+    spec:
+      containers:
+        - name: ai-service
+          image: taskflow-ai/ai-service:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 3002 }]
+          envFrom:
+            - configMapRef: { name: taskflow-config }
+          env:
+            - name: RABBITMQ_URL
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: RABBITMQ_URL } }
+            - name: ANTHROPIC_API_KEY
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: ANTHROPIC_API_KEY } }
+          readinessProbe:
+            httpGet: { path: /health, port: 3002 }
+            initialDelaySeconds: 15
+          livenessProbe:
+            httpGet: { path: /health, port: 3002 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          # Higher limits than the other services: the local embedding model
+          # (transformers.js/onnxruntime) is loaded into memory per pod.
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 1, memory: 1536Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: taskflow-ai
+spec:
+  selector: { app: ai-service }
+  ports: [{ port: 3002, targetPort: 3002 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-service
+  namespace: taskflow-ai
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ai-service }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 75 } }

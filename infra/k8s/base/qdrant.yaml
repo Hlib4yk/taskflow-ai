@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-data
+  namespace: taskflow-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant
+  namespace: taskflow-ai
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: qdrant }
+  template:
+    metadata:
+      labels: { app: qdrant }
+    spec:
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.11.5
+          ports: [{ containerPort: 6333 }]
+          volumeMounts:
+            - { name: data, mountPath: /qdrant/storage }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 1, memory: 1Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: qdrant-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: taskflow-ai
+spec:
+  selector: { app: qdrant }
+  ports: [{ port: 6333, targetPort: 6333 }]

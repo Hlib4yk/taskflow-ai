@@ -1,0 +1,38 @@
+# Host-based routing (nginx ingress controller) so each service keeps the
+# same route layout it uses in docker-compose — no path rewriting needed.
+# For local testing, point these hosts at your ingress controller's IP
+# (e.g. in /etc/hosts for minikube/kind). NEXT_PUBLIC_API_URL /
+# NEXT_PUBLIC_NOTIFICATIONS_URL must be baked into the web image at build
+# time (see apps/web/Dockerfile) to match whatever hosts you use here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskflow-ingress
+  namespace: taskflow-ai
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.taskflow.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { number: 3100 } }
+    - host: api.taskflow.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: gateway, port: { number: 3000 } }
+    - host: realtime.taskflow.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: notifications-service, port: { number: 3003 } }

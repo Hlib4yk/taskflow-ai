@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-config
+  namespace: taskflow-ai
+data:
+  NODE_ENV: "production"
+
+  # Service discovery — Kubernetes Service names double as internal DNS,
+  # same names used as docker-compose service hostnames for local dev.
+  TASKS_SERVICE_URL: "http://tasks-service:3001"
+  AI_SERVICE_URL: "http://ai-service:3002"
+  NOTIFICATIONS_SERVICE_URL: "http://notifications-service:3003"
+
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  REDIS_URL: "redis://redis:6379"
+  QDRANT_URL: "http://qdrant:6333"
+
+  GATEWAY_PORT: "3000"
+  TASKS_SERVICE_PORT: "3001"
+  AI_SERVICE_PORT: "3002"
+  NOTIFICATIONS_SERVICE_PORT: "3003"
+
+  JWT_ACCESS_TTL: "15m"
+  JWT_REFRESH_TTL: "7d"
+  LLM_MODEL: "claude-sonnet-5"

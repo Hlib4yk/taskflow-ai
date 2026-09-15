@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasks-service
+  namespace: taskflow-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: tasks-service }
+  template:
+    metadata:
+      labels: { app: tasks-service }
+    spec:
+      containers:
+        - name: tasks-service
+          image: taskflow-ai/tasks-service:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 3001 }]
+          envFrom:
+            - configMapRef: { name: taskflow-config }
+          env:
+            - name: TASKS_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: TASKS_DATABASE_URL } }
+            - name: RABBITMQ_URL
+              valueFrom: { secretKeyRef: { name: taskflow-secrets, key: RABBITMQ_URL } }
+          readinessProbe:
+            httpGet: { path: /health, port: 3001 }
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 3001 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tasks-service
+  namespace: taskflow-ai
+spec:
+  selector: { app: tasks-service }
+  ports: [{ port: 3001, targetPort: 3001 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tasks-service
+  namespace: taskflow-ai
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: tasks-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

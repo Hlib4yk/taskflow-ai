@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+.next
+out
+.turbo
+coverage
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.tsbuildinfo
+prisma/generated
+.vscode/*
+!.vscode/extensions.json
+pnpm-lock.yaml.bak
