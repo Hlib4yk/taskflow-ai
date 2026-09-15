@@ -29,16 +29,18 @@ export class AuthController {
   }
 
   @Post("refresh")
-  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const refreshToken = req.cookies?.refresh_token as string | undefined;
     if (!refreshToken) return { ok: false };
-    const tokens = this.auth.refresh(refreshToken);
+    const tokens = await this.auth.refresh(refreshToken);
     setAuthCookies(res, tokens);
     return { ok: true };
   }
 
   @Post("logout")
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = req.cookies?.refresh_token as string | undefined;
+    await this.auth.logout(refreshToken);
     res.clearCookie("access_token");
     res.clearCookie("refresh_token", { path: "/auth/refresh" });
     return { ok: true };

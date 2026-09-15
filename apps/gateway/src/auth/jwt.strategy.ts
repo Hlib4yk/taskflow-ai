@@ -9,6 +9,11 @@ export interface JwtPayload {
   email: string;
 }
 
+/** The refresh JWT additionally carries the id of its RefreshToken row, used for rotation/revocation. */
+export interface RefreshTokenPayload extends JwtPayload {
+  jti: string;
+}
+
 const cookieExtractor = (req: Request): string | null => {
   return (req.cookies?.access_token as string | undefined) ?? null;
 };

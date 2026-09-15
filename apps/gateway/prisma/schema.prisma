@@ -9,9 +9,27 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  refreshTokens RefreshToken[]
+}
+
+// Rotated on every /auth/refresh call; `familyId` links a chain of tokens
+// descended from one login so that reuse of an already-rotated token (a
+// strong signal of theft) can revoke the whole chain at once.
+model RefreshToken {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId          String
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+
+  @@index([familyId])
+  @@index([userId])
 }

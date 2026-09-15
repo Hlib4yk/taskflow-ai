@@ -96,4 +96,27 @@ describe("Auth (e2e)", () => {
   it("rejects /auth/me without a session", async () => {
     await request(app.getHttpServer()).get("/auth/me").expect(401);
   });
+
+  it("detects refresh-token reuse and revokes the whole token family", async () => {
+    const server = app.getHttpServer();
+
+    const loginRes = await request(server)
+      .post("/auth/login")
+      .send({ email, password: "password123" })
+      .expect(201);
+    const originalCookies = loginRes.get("Set-Cookie")!;
+
+    // First rotation succeeds and mints a new refresh token in the same family.
+    const firstRefresh = await request(server)
+      .post("/auth/refresh")
+      .set("Cookie", originalCookies)
+      .expect(201);
+    const rotatedCookies = firstRefresh.get("Set-Cookie")!;
+
+    // Replaying the now-rotated-away original token is treated as theft:
+    // the whole family (including the token issued above) gets revoked.
+    await request(server).post("/auth/refresh").set("Cookie", originalCookies).expect(401);
+
+    await request(server).post("/auth/refresh").set("Cookie", rotatedCookies).expect(401);
+  });
 });

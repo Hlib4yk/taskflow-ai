@@ -45,8 +45,9 @@ flowchart LR
 ```
 
 - **gateway** is the only service exposed publicly. It owns auth (JWT in
-  httpOnly cookies) and reverse-proxies REST + the chat SSE stream to the
-  internal services, forwarding the caller's user id via a trusted header.
+  httpOnly cookies, with rotating/revocable refresh tokens — see below) and
+  reverse-proxies REST + the chat SSE stream to the internal services,
+  forwarding the caller's user id via a trusted header.
 - **tasks-service** owns projects/tasks/comments (Postgres via Prisma) and
   publishes domain events whenever something changes.
 - **ai-service** is a hybrid HTTP + RabbitMQ-consumer app: it indexes
@@ -190,6 +191,25 @@ All three run in CI (`.github/workflows/ci.yml`) on every push/PR.
 - This is also the first real use of the Redis instance the compose stack
   always provisioned — previously declared but never wired into any service.
 
+## Auth
+
+Access tokens are still short-lived, stateless JWTs (15m default) — no DB
+hit on every request. Refresh tokens are where the hardening lives:
+
+- Every `/auth/refresh` call **rotates** the refresh token: the presented
+  one is revoked and a new one is issued in its place, tracked in a
+  `RefreshToken` Postgres table (`familyId` links every token descended
+  from one login).
+- **Reuse detection**: presenting a refresh token that's already been
+  rotated away (i.e. used a second time) is treated as a strong signal of
+  theft — the entire token family is revoked immediately, forcing the
+  legitimate user to log in again rather than silently trusting whichever
+  copy shows up first.
+- `/auth/logout` revokes the current refresh token server-side, not just
+  the client-side cookie.
+- See `apps/gateway/src/auth/auth.service.ts` and the reuse-detection e2e
+  test in `apps/gateway/test/auth.e2e-spec.ts` for the exact flow.
+
 ## Deploying to Kubernetes
 
 ```bash
@@ -230,9 +250,9 @@ reach for them:
   by hand; Renovate/Dependabot for dependency PRs.
 - **IaC**: Terraform or Pulumi for the actual cluster/managed Postgres/DNS,
   rather than assuming a cluster already exists.
-- **Auth hardening**: OAuth/social login via Auth.js or Clerk if you don't
-  want to own password storage; short-lived access tokens are already in
-  place, refresh-token rotation is a good next step.
+- **OAuth/social login**: Auth.js or Clerk if you don't want to own password
+  storage — refresh-token rotation and reuse detection are already in place
+  for the credentials flow (see "Auth" above).
 - **API layer**: tRPC is worth considering instead of hand-rolled REST DTOs
   if the frontend and gateway stay in the same monorepo long-term — you'd
   trade the proxy/DTO boilerplate for end-to-end type inference.
