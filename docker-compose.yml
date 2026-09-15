@@ -60,6 +60,53 @@ services:
       - qdrant_data:/qdrant/storage
 
   # ---------------------------------------------------------------------
+  # Observability
+  # ---------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    depends_on:
+      - jaeger
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3300:3000"
+    depends_on:
+      - prometheus
+
+  # ---------------------------------------------------------------------
   # Application services
   # ---------------------------------------------------------------------
   gateway:
@@ -79,6 +126,8 @@ services:
         condition: service_started
       ai-service:
         condition: service_started
+      otel-collector:
+        condition: service_started
 
   tasks-service:
     build:
@@ -93,6 +142,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   ai-service:
     build:
@@ -107,6 +158,8 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   notifications-service:
     build:
@@ -119,6 +172,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   web:
     build:
@@ -137,3 +192,5 @@ services:
 volumes:
   pg_data:
   qdrant_data:
+  prometheus_data:
+  grafana_data:

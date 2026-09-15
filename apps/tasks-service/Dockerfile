@@ -26,4 +26,4 @@ COPY --from=installer /app .
 USER nestjs
 
 EXPOSE 3001
-CMD ["node", "apps/tasks-service/dist/main.js"]
+CMD ["node", "--require", "./apps/tasks-service/dist/tracing.js", "apps/tasks-service/dist/main.js"]

@@ -32,7 +32,7 @@ export class TasksProxyController {
         url: `${this.baseUrl}${targetPath}`,
         method: req.method,
         data: req.body,
-        headers: { "x-user-id": user.userId },
+        headers: { "x-user-id": user.userId, "x-request-id": req.headers["x-request-id"] },
         validateStatus: () => true,
       }),
     );

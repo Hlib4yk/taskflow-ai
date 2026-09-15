@@ -35,4 +35,4 @@ COPY --from=installer /app .
 USER nestjs
 
 EXPOSE 3000
-CMD ["node", "apps/gateway/dist/main.js"]
+CMD ["node", "--require", "./apps/gateway/dist/tracing.js", "apps/gateway/dist/main.js"]

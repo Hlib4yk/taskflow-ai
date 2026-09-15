@@ -25,4 +25,4 @@ COPY --from=installer /app .
 USER nestjs
 
 EXPOSE 3003
-CMD ["node", "apps/notifications-service/dist/main.js"]
+CMD ["node", "--require", "./apps/notifications-service/dist/tracing.js", "apps/notifications-service/dist/main.js"]

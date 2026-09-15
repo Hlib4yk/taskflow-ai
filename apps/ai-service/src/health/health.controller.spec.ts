@@ -1,6 +1,8 @@
+import { ConfigService } from "@nestjs/config";
+import { HealthCheckService, MemoryHealthIndicator, MicroserviceHealthIndicator } from "@nestjs/terminus";
 import { Test } from "@nestjs/testing";
-import { HealthCheckService } from "@nestjs/terminus";
 import { HealthController } from "./health.controller";
+import { QdrantHealthIndicator } from "../rag/qdrant.health";
 
 describe("HealthController", () => {
   it("reports ok", async () => {
@@ -8,6 +10,10 @@ describe("HealthController", () => {
       controllers: [HealthController],
       providers: [
         { provide: HealthCheckService, useValue: { check: jest.fn().mockResolvedValue({ status: "ok" }) } },
+        { provide: QdrantHealthIndicator, useValue: { isHealthy: jest.fn() } },
+        { provide: MicroserviceHealthIndicator, useValue: { pingCheck: jest.fn() } },
+        { provide: MemoryHealthIndicator, useValue: { checkHeap: jest.fn() } },
+        { provide: ConfigService, useValue: { getOrThrow: () => "amqp://localhost:5672" } },
       ],
     }).compile();
 

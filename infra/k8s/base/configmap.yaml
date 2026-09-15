@@ -16,6 +16,7 @@ data:
   POSTGRES_PORT: "5432"
   REDIS_URL: "redis://redis:6379"
   QDRANT_URL: "http://qdrant:6333"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
 
   GATEWAY_PORT: "3000"
   TASKS_SERVICE_PORT: "3001"

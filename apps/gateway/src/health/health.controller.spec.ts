@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
-import { HealthCheckService } from "@nestjs/terminus";
+import { HealthCheckService, MemoryHealthIndicator } from "@nestjs/terminus";
 import { HealthController } from "./health.controller";
+import { DatabaseHealthIndicator } from "../prisma/prisma.health";
 
 describe("HealthController", () => {
   it("reports ok", async () => {
@@ -8,6 +9,8 @@ describe("HealthController", () => {
       controllers: [HealthController],
       providers: [
         { provide: HealthCheckService, useValue: { check: jest.fn().mockResolvedValue({ status: "ok" }) } },
+        { provide: DatabaseHealthIndicator, useValue: { isHealthy: jest.fn() } },
+        { provide: MemoryHealthIndicator, useValue: { checkHeap: jest.fn() } },
       ],
     }).compile();
 

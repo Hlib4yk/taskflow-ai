@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: taskflow-ai
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+      debug:
+        verbosity: basic
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlp/jaeger, debug]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: taskflow-ai
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: gateway
+        static_configs: [{ targets: ["gateway:3000"] }]
+      - job_name: tasks-service
+        static_configs: [{ targets: ["tasks-service:3001"] }]
+      - job_name: ai-service
+        static_configs: [{ targets: ["ai-service:3002"] }]
+      - job_name: notifications-service
+        static_configs: [{ targets: ["notifications-service:3003"] }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: taskflow-ai
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+      - name: Jaeger
+        uid: jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger:16686
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: taskflow-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: jaeger }
+  template:
+    metadata:
+      labels: { app: jaeger }
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.76.0
+          env:
+            - { name: COLLECTOR_OTLP_ENABLED, value: "true" }
+          ports: [{ containerPort: 16686 }, { containerPort: 4317 }]
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: taskflow-ai
+spec:
+  selector: { app: jaeger }
+  ports:
+    - { name: ui, port: 16686, targetPort: 16686 }
+    - { name: otlp-grpc, port: 4317, targetPort: 4317 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: taskflow-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: otel-collector }
+  template:
+    metadata:
+      labels: { app: otel-collector }
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.153.0
+          args: ["--config=/etc/otel-collector-config.yaml"]
+          ports: [{ containerPort: 4317 }, { containerPort: 4318 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel-collector-config.yaml, subPath: otel-collector-config.yaml }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: taskflow-ai
+spec:
+  selector: { app: otel-collector }
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: 4317 }
+    - { name: otlp-http, port: 4318, targetPort: 4318 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: taskflow-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.14.0
+          ports: [{ containerPort: 9090 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: taskflow-ai
+spec:
+  selector: { app: prometheus }
+  ports: [{ port: 9090, targetPort: 9090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: taskflow-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels: { app: grafana }
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.2
+          env:
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
+            - { name: GF_AUTH_DISABLE_LOGIN_FORM, value: "true" }
+          ports: [{ containerPort: 3000 }]
+          volumeMounts:
+            - { name: datasources, mountPath: /etc/grafana/provisioning/datasources }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+      volumes:
+        - name: datasources
+          configMap: { name: grafana-datasources }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: taskflow-ai
+spec:
+  selector: { app: grafana }
+  ports: [{ port: 3000, targetPort: 3000 }]

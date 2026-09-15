@@ -28,4 +28,4 @@ COPY --from=installer /app .
 USER nestjs
 
 EXPOSE 3002
-CMD ["node", "apps/ai-service/dist/main.js"]
+CMD ["node", "--require", "./apps/ai-service/dist/tracing.js", "apps/ai-service/dist/main.js"]

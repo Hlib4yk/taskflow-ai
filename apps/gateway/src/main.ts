@@ -5,10 +5,12 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
+import { requestId } from "./common/request-id";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+  app.use(requestId);
   app.use(cookieParser());
   app.enableCors({
     origin: process.env.NEXT_PUBLIC_API_URL ? true : "http://localhost:3100",

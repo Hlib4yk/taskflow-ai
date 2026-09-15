@@ -23,7 +23,7 @@ export class AiProxyController {
   async chat(@Req() req: Request, @Res() res: Response, @CurrentUser() user: RequestUser) {
     const upstream = await firstValueFrom(
       this.http.post(`${this.baseUrl}/chat`, req.body, {
-        headers: { "x-user-id": user.userId },
+        headers: { "x-user-id": user.userId, "x-request-id": req.headers["x-request-id"] },
         responseType: "stream",
       }),
     );
@@ -36,10 +36,10 @@ export class AiProxyController {
   }
 
   @Post("subtasks/generate")
-  async generateSubtasks(@Body() body: unknown, @CurrentUser() user: RequestUser) {
+  async generateSubtasks(@Req() req: Request, @Body() body: unknown, @CurrentUser() user: RequestUser) {
     const response = await firstValueFrom(
       this.http.post(`${this.baseUrl}/subtasks/generate`, body, {
-        headers: { "x-user-id": user.userId },
+        headers: { "x-user-id": user.userId, "x-request-id": req.headers["x-request-id"] },
       }),
     );
     return response.data;

@@ -74,7 +74,7 @@ flowchart LR
 | Orchestration     | Kubernetes + Kustomize (base + dev/prod overlays), HPA          |
 | CI                | GitHub Actions (lint, typecheck, unit + e2e + Playwright, docker build matrix) |
 | Testing           | Jest unit tests, Supertest e2e (gateway, tasks-service), Playwright golden paths (web) |
-| Observability     | pino structured logging, `/health` on every service             |
+| Observability     | OpenTelemetry traces (Jaeger), Prometheus metrics + Grafana, pino structured logging with request-id correlation, real `/health` checks |
 
 ## Repo layout
 
@@ -89,6 +89,7 @@ packages/
   types/                  Shared TS types & Zod schemas (DTOs, events)
 infra/
   postgres/               Multi-database init script
+  observability/          otel-collector/Prometheus/Grafana config for docker compose
   k8s/base/               Kubernetes manifests
   k8s/overlays/{dev,prod} Kustomize overlays
 ```
@@ -113,6 +114,9 @@ Then open:
 - **http://localhost:3000/docs** — gateway Swagger
 - **http://localhost:15672** — RabbitMQ management UI
 - **http://localhost:6333/dashboard** — Qdrant dashboard
+- **http://localhost:16686** — Jaeger (distributed traces)
+- **http://localhost:9090** — Prometheus
+- **http://localhost:3300** — Grafana (anonymous viewer access, pre-provisioned dashboard)
 
 For day-to-day development without Docker, `pnpm dev` runs every app via
 Turborepo (point `.env` at `localhost` instead of container hostnames first).
@@ -138,6 +142,29 @@ pnpm --filter web test:e2e                        # Playwright, needs the full c
   `ANTHROPIC_API_KEY`).
 
 All three run in CI (`.github/workflows/ci.yml`) on every push/PR.
+
+## Observability
+
+- **Traces**: every service loads `dist/tracing.js` (`node --require`, see
+  each Dockerfile's `CMD`) before anything else, auto-instrumenting
+  http/express/amqplib/pino via `@opentelemetry/auto-instrumentations-node`
+  and exporting OTLP to `otel-collector`, which forwards to **Jaeger**. A
+  request through the gateway shows up as one trace spanning tasks-service,
+  the RabbitMQ publish, and ai-service's async consumer.
+- **Metrics**: `@willsoto/nestjs-prometheus` exposes `/metrics` (Node
+  process CPU/memory/event-loop-lag/heap) on every service; **Prometheus**
+  scrapes all four, **Grafana** ships with that datasource plus a
+  pre-provisioned "TaskFlow AI — service overview" dashboard.
+- **Logs**: pino structured logging everywhere, correlated by an
+  `x-request-id` the gateway generates (or reuses, if the caller already
+  sent one) and forwards to whichever service it proxies to — grep that id
+  across services to follow one browser request end-to-end.
+- **Health**: `/health` on every service runs real checks (Postgres via
+  Prisma, Qdrant, RabbitMQ connectivity, heap headroom) via
+  `@nestjs/terminus`, not just "the HTTP server is up."
+- Not wired into `pnpm dev` (`nest start --watch`) — tracing's `--require`
+  preload only applies to the compiled Docker image; run `pnpm docker:up`
+  to see any of this.
 
 ## Deploying to Kubernetes
 
@@ -175,9 +202,6 @@ The scaffold intentionally stops at "a real, working system" rather than a
 finished product. Natural next additions, roughly in the order most teams
 reach for them:
 
-- **Observability**: OpenTelemetry traces across the gateway → services →
-  RabbitMQ hops, shipped to Grafana/Tempo or a hosted APM; Prometheus +
-  Grafana dashboards fed by each service's `/health`/metrics.
 - **GitOps**: ArgoCD or Flux watching `infra/k8s`, instead of `kubectl apply`
   by hand; Renovate/Dependabot for dependency PRs.
 - **IaC**: Terraform or Pulumi for the actual cluster/managed Postgres/DNS,

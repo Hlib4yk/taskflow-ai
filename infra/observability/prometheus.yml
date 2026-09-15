@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:3000"]
+  - job_name: tasks-service
+    static_configs:
+      - targets: ["tasks-service:3001"]
+  - job_name: ai-service
+    static_configs:
+      - targets: ["ai-service:3002"]
+  - job_name: notifications-service
+    static_configs:
+      - targets: ["notifications-service:3003"]

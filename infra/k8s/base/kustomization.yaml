@@ -11,6 +11,7 @@ resources:
   - redis.yaml
   - rabbitmq.yaml
   - qdrant.yaml
+  - observability.yaml
   - gateway.yaml
   - tasks-service.yaml
   - ai-service.yaml
