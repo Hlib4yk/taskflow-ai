@@ -72,7 +72,8 @@ flowchart LR
 | Monorepo          | Turborepo + pnpm workspaces                                     |
 | Containers        | Docker (multi-stage, `turbo prune` per app)                     |
 | Orchestration     | Kubernetes + Kustomize (base + dev/prod overlays), HPA          |
-| CI                | GitHub Actions (lint, typecheck, build, docker build matrix)    |
+| CI                | GitHub Actions (lint, typecheck, unit + e2e + Playwright, docker build matrix) |
+| Testing           | Jest unit tests, Supertest e2e (gateway, tasks-service), Playwright golden paths (web) |
 | Observability     | pino structured logging, `/health` on every service             |
 
 ## Repo layout
@@ -116,6 +117,28 @@ Then open:
 For day-to-day development without Docker, `pnpm dev` runs every app via
 Turborepo (point `.env` at `localhost` instead of container hostnames first).
 
+## Testing
+
+```bash
+pnpm test                                         # unit tests, no infra needed
+pnpm --filter @taskflow/gateway test:e2e          # Supertest, needs Postgres reachable
+pnpm --filter @taskflow/tasks-service test:e2e    # Supertest, needs Postgres + RabbitMQ
+pnpm --filter web test:e2e                        # Playwright, needs the full compose stack
+```
+
+- **Unit tests** mock `PrismaService`/`ClientProxy`/the Anthropic SDK and
+  cover the core business logic (auth, projects/tasks/comments, RAG
+  indexing/retrieval, LLM response parsing, the RabbitMQ→WebSocket bridge).
+- **e2e tests** boot a real Nest app against a real Postgres (and RabbitMQ
+  for tasks-service) — run `pnpm docker:up` first, or point the
+  `*_DATABASE_URL`/`RABBITMQ_URL` env vars at any reachable instance.
+- **Playwright** drives the actual browser against `pnpm docker:up`
+  (register → create project → create task → chat with the AI assistant,
+  the last one stubbed at the network layer so it doesn't need a live
+  `ANTHROPIC_API_KEY`).
+
+All three run in CI (`.github/workflows/ci.yml`) on every push/PR.
+
 ## Deploying to Kubernetes
 
 ```bash
@@ -152,8 +175,6 @@ The scaffold intentionally stops at "a real, working system" rather than a
 finished product. Natural next additions, roughly in the order most teams
 reach for them:
 
-- **Testing**: Vitest/Jest unit tests per service, Supertest for the gateway,
-  Playwright for the frontend's golden paths — none are wired up yet.
 - **Observability**: OpenTelemetry traces across the gateway → services →
   RabbitMQ hops, shipped to Grafana/Tempo or a hosted APM; Prometheus +
   Grafana dashboards fed by each service's `/health`/metrics.

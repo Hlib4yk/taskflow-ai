@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  ANTHROPIC_API_KEY: sk-ant-dummy
+  NEXT_PUBLIC_API_URL: http://localhost:3000
+  NEXT_PUBLIC_NOTIFICATIONS_URL: http://localhost:3003
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,12 +36,136 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:16-alpine
         env:
-          # Dummy values so build-time env access doesn't fail — real
-          # secrets are injected at deploy time via Kubernetes.
-          ANTHROPIC_API_KEY: sk-ant-dummy
-          NEXT_PUBLIC_API_URL: http://localhost:3000
-          NEXT_PUBLIC_NOTIFICATIONS_URL: http://localhost:3003
+          POSTGRES_USER: taskflow
+          POSTGRES_PASSWORD: taskflow
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U taskflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: taskflow
+          RABBITMQ_DEFAULT_PASS: taskflow
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      GATEWAY_DATABASE_URL: postgresql://taskflow:taskflow@localhost:5432/authdb
+      TASKS_DATABASE_URL: postgresql://taskflow:taskflow@localhost:5432/tasksdb
+      RABBITMQ_URL: amqp://taskflow:taskflow@localhost:5672
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create test databases
+        run: |
+          PGPASSWORD=taskflow psql -h localhost -U taskflow -d postgres -c "CREATE DATABASE authdb;"
+          PGPASSWORD=taskflow psql -h localhost -U taskflow -d postgres -c "CREATE DATABASE tasksdb;"
+
+      - name: Push Prisma schemas to the test databases
+        run: |
+          pnpm --filter @taskflow/gateway exec prisma db push --accept-data-loss
+          pnpm --filter @taskflow/tasks-service exec prisma db push --accept-data-loss
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Gateway e2e tests
+        run: pnpm --filter @taskflow/gateway test:e2e
+
+      - name: Tasks-service e2e tests
+        run: pnpm --filter @taskflow/tasks-service test:e2e
+
+  e2e-web:
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      PLAYWRIGHT_BASE_URL: http://localhost:3100
+      PLAYWRIGHT_GATEWAY_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Prepare .env for docker compose
+        run: cp .env.example .env
+
+      - name: Start the full stack
+        run: docker compose up -d --build
+
+      - name: Wait for the stack to become healthy
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:3000/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf http://localhost:3100; do sleep 2; done'
+
+      - name: Push Prisma schemas to the compose databases
+        run: |
+          GATEWAY_DATABASE_URL=postgresql://taskflow:taskflow@localhost:5432/authdb \
+            pnpm --filter @taskflow/gateway exec prisma db push --accept-data-loss
+          TASKS_DATABASE_URL=postgresql://taskflow:taskflow@localhost:5432/tasksdb \
+            pnpm --filter @taskflow/tasks-service exec prisma db push --accept-data-loss
+
+      - name: Playwright golden-path tests
+        run: pnpm --filter web test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
 
   docker:
     runs-on: ubuntu-latest

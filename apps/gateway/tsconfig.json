@@ -11,5 +11,5 @@
     "isolatedModules": false,
     "baseUrl": "./"
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

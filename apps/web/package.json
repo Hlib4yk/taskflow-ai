@@ -7,7 +7,8 @@
     "dev": "next dev -p 3100",
     "start": "next start -p 3100",
     "lint": "next lint --max-warnings 0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
@@ -23,6 +24,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "@types/node": "^20.16.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
