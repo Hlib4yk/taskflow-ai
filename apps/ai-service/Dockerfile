@@ -3,7 +3,7 @@
 # whose prebuilt native binaries target glibc and are unreliable on musl.
 FROM node:20-bookworm-slim AS base
 ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ENV PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 RUN corepack enable
 
 FROM base AS pruner
