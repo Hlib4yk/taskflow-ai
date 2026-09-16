@@ -4,14 +4,6 @@ import { z } from "zod";
 // Domain enums
 // ---------------------------------------------------------------------------
 
-export const TaskStatus = {
-  TODO: "TODO",
-  IN_PROGRESS: "IN_PROGRESS",
-  IN_REVIEW: "IN_REVIEW",
-  DONE: "DONE",
-} as const;
-export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
-
 export const TaskPriority = {
   LOW: "LOW",
   MEDIUM: "MEDIUM",
@@ -63,14 +55,16 @@ export const createTaskSchema = z.object({
   description: z.string().max(5000).optional(),
   priority: z.nativeEnum(TaskPriority).default(TaskPriority.MEDIUM),
   projectId: z.string().uuid(),
+  columnId: z.string().uuid(),
 });
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 
 export const updateTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
-  status: z.nativeEnum(TaskStatus).optional(),
   priority: z.nativeEnum(TaskPriority).optional(),
+  columnId: z.string().uuid().optional(),
+  order: z.number().optional(),
 });
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 
@@ -79,6 +73,17 @@ export const createCommentSchema = z.object({
   taskId: z.string().uuid(),
 });
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
+export const createColumnSchema = z.object({
+  projectId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+});
+export type CreateColumnInput = z.infer<typeof createColumnSchema>;
+
+export const updateColumnSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+});
+export type UpdateColumnInput = z.infer<typeof updateColumnSchema>;
 
 export interface ProjectDto {
   id: string;
@@ -89,13 +94,22 @@ export interface ProjectDto {
   updatedAt: string;
 }
 
+export interface ColumnDto {
+  id: string;
+  name: string;
+  order: number;
+  projectId: string;
+  createdAt: string;
+}
+
 export interface TaskDto {
   id: string;
   title: string;
   description: string | null;
-  status: TaskStatus;
   priority: TaskPriority;
   projectId: string;
+  columnId: string;
+  order: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -155,7 +169,7 @@ export interface TaskCreatedEvent {
 export interface TaskUpdatedEvent {
   taskId: string;
   projectId: string;
-  status: TaskStatus;
+  columnId: string;
   actorId: string;
 }
 

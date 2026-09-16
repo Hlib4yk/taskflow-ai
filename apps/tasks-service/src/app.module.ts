@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { PrometheusModule } from "@willsoto/nestjs-prometheus";
+import { ColumnsModule } from "./columns/columns.module";
 import { CommentsModule } from "./comments/comments.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -20,6 +21,7 @@ import { TasksModule } from "./tasks/tasks.module";
     PrometheusModule.register({ defaultMetrics: { enabled: true } }),
     PrismaModule,
     ProjectsModule,
+    ColumnsModule,
     TasksModule,
     CommentsModule,
     HealthModule,

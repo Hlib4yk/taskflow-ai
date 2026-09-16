@@ -2,13 +2,25 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
 
+// Every new project starts with a Trello-style default board, same as a
+// fresh Trello board — users can rename/delete/add columns from there.
+const DEFAULT_COLUMNS = ["To Do", "In Progress", "Done"];
+
 @Injectable()
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(ownerId: string, dto: CreateProjectDto) {
-    return this.prisma.project.create({
-      data: { name: dto.name, description: dto.description, ownerId },
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: { name: dto.name, description: dto.description, ownerId },
+      });
+
+      await tx.column.createMany({
+        data: DEFAULT_COLUMNS.map((name, order) => ({ name, order, projectId: project.id })),
+      });
+
+      return project;
     });
   }
 

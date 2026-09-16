@@ -23,8 +23,13 @@ test("create a project, add a task, and see it appear on the board", async ({ pa
   await page.getByText("Launch v2").click();
   await expect(page).toHaveURL(/\/projects\//);
 
-  await page.getByPlaceholder("New task title").fill("Write the launch email");
-  await page.getByRole("button", { name: "Add task" }).click();
+  // A fresh project is seeded with a Trello-style default board.
+  await expect(page.getByText("To Do")).toBeVisible();
+  await expect(page.getByText("In Progress")).toBeVisible();
+  await expect(page.getByText("Done")).toBeVisible();
+
+  await page.getByPlaceholder("+ Add a task").first().fill("Write the launch email");
+  await page.getByPlaceholder("+ Add a task").first().press("Enter");
   await expect(page.getByText("Write the launch email")).toBeVisible();
 
   await page.getByRole("button", { name: "Reindex" }).click();

@@ -1,6 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { EVENT_PATTERNS, TaskStatus } from "@taskflow/types";
+import { EVENT_PATTERNS } from "@taskflow/types";
 import { TasksService } from "./tasks.service";
 import { EventsPublisher } from "../events/events.publisher";
 import { PrismaService } from "../prisma/prisma.service";
@@ -8,13 +8,25 @@ import { PrismaService } from "../prisma/prisma.service";
 describe("TasksService", () => {
   let service: TasksService;
   let prisma: {
-    task: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+    task: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
   };
   let events: { publish: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
-      task: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+      task: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
     };
     events = { publish: jest.fn() };
 
@@ -29,32 +41,55 @@ describe("TasksService", () => {
     service = module.get(TasksService);
   });
 
-  it("creates a task and publishes task.created", async () => {
-    prisma.task.create.mockResolvedValue({
-      id: "t1",
-      title: "Ship it",
-      description: null,
-      projectId: "p1",
+  describe("create", () => {
+    it("appends the task at the end of the column and publishes task.created", async () => {
+      prisma.task.findFirst.mockResolvedValue({ order: 2 });
+      prisma.task.create.mockResolvedValue({
+        id: "t1",
+        title: "Ship it",
+        description: null,
+        projectId: "p1",
+        columnId: "col1",
+        order: 3,
+      });
+
+      const result = await service.create("u1", {
+        title: "Ship it",
+        projectId: "p1",
+        columnId: "col1",
+      });
+
+      expect(result.id).toBe("t1");
+      expect(prisma.task.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ columnId: "col1", order: 3 }),
+      });
+      expect(events.publish).toHaveBeenCalledWith(EVENT_PATTERNS.TASK_CREATED, {
+        taskId: "t1",
+        projectId: "p1",
+        title: "Ship it",
+        description: null,
+        actorId: "u1",
+      });
     });
 
-    const result = await service.create("u1", { title: "Ship it", projectId: "p1" });
+    it("starts a task at order 0 in an empty column", async () => {
+      prisma.task.findFirst.mockResolvedValue(null);
+      prisma.task.create.mockResolvedValue({ id: "t1", projectId: "p1", columnId: "col1", order: 0 });
 
-    expect(result.id).toBe("t1");
-    expect(events.publish).toHaveBeenCalledWith(EVENT_PATTERNS.TASK_CREATED, {
-      taskId: "t1",
-      projectId: "p1",
-      title: "Ship it",
-      description: null,
-      actorId: "u1",
+      await service.create("u1", { title: "First", projectId: "p1", columnId: "col1" });
+
+      expect(prisma.task.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ order: 0 }),
+      });
     });
   });
 
-  it("lists tasks for a project", async () => {
+  it("lists tasks for a project ordered by column then position", async () => {
     await service.findAllForProject("p1");
 
     expect(prisma.task.findMany).toHaveBeenCalledWith({
       where: { projectId: "p1" },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ columnId: "asc" }, { order: "asc" }],
     });
   });
 
@@ -64,16 +99,16 @@ describe("TasksService", () => {
     await expect(service.findOne("missing")).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("updates a task and publishes task.updated", async () => {
-    prisma.task.update.mockResolvedValue({ id: "t1", projectId: "p1", status: TaskStatus.DONE });
+  it("moves a task to another column and publishes task.updated", async () => {
+    prisma.task.update.mockResolvedValue({ id: "t1", projectId: "p1", columnId: "col2" });
 
-    const result = await service.update("u1", "t1", { status: TaskStatus.DONE });
+    const result = await service.update("u1", "t1", { columnId: "col2", order: 0.5 });
 
-    expect(result.status).toBe(TaskStatus.DONE);
+    expect(result.columnId).toBe("col2");
     expect(events.publish).toHaveBeenCalledWith(EVENT_PATTERNS.TASK_UPDATED, {
       taskId: "t1",
       projectId: "p1",
-      status: TaskStatus.DONE,
+      columnId: "col2",
       actorId: "u1",
     });
   });

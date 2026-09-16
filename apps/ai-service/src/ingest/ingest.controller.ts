@@ -33,8 +33,8 @@ export class IngestController {
 
   @EventPattern(EVENT_PATTERNS.TASK_UPDATED)
   async onTaskUpdated(@Payload() payload: TaskUpdatedEvent) {
-    this.logger.log(`Task ${payload.taskId} updated -> status ${payload.status}`);
-    // Status changes alone don't need re-embedding (no new text), so this is
+    this.logger.log(`Task ${payload.taskId} moved to column ${payload.columnId}`);
+    // Column moves alone don't need re-embedding (no new text), so this is
     // a no-op placeholder for future signals (e.g. re-index on title edits).
   }
 

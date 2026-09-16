@@ -32,7 +32,7 @@ describe("EventsController", () => {
   });
 
   it("forwards task.updated to the project room and records it for the digest", () => {
-    const payload = { taskId: "t1", projectId: "p1", status: "DONE" as const, actorId: "u1" };
+    const payload = { taskId: "t1", projectId: "p1", columnId: "col-done", actorId: "u1" };
     controller.onTaskUpdated(payload);
 
     expect(realtime.emitToProject).toHaveBeenCalledWith("p1", "task.updated", payload);

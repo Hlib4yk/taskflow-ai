@@ -5,10 +5,21 @@ import { PrismaService } from "../prisma/prisma.service";
 
 describe("ProjectsService", () => {
   let service: ProjectsService;
-  let prisma: { project: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock } };
+  let prisma: {
+    $transaction: jest.Mock;
+    project: { create: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock };
+    column: { createMany: jest.Mock };
+  };
 
   beforeEach(async () => {
-    prisma = { project: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() } };
+    prisma = {
+      // The service runs everything through an interactive transaction —
+      // handing the callback the same mock object back is enough to
+      // verify both calls it makes inside.
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
+      project: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
+      column: { createMany: jest.fn() },
+    };
 
     const module = await Test.createTestingModule({
       providers: [ProjectsService, { provide: PrismaService, useValue: prisma }],
@@ -26,6 +37,20 @@ describe("ProjectsService", () => {
       data: { name: "Launch", description: undefined, ownerId: "u1" },
     });
     expect(result).toEqual({ id: "p1", name: "Launch", ownerId: "u1" });
+  });
+
+  it("seeds a fresh project with the default To Do / In Progress / Done columns", async () => {
+    prisma.project.create.mockResolvedValue({ id: "p1", name: "Launch", ownerId: "u1" });
+
+    await service.create("u1", { name: "Launch" });
+
+    expect(prisma.column.createMany).toHaveBeenCalledWith({
+      data: [
+        { name: "To Do", order: 0, projectId: "p1" },
+        { name: "In Progress", order: 1, projectId: "p1" },
+        { name: "Done", order: 2, projectId: "p1" },
+      ],
+    });
   });
 
   it("lists only the owner's projects, newest first", async () => {

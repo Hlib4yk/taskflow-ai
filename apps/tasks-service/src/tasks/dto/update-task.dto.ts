@@ -1,5 +1,5 @@
-import { TaskPriority, TaskStatus } from "@taskflow/types";
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { TaskPriority } from "@taskflow/types";
+import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 export class UpdateTaskDto {
   @IsOptional()
@@ -14,10 +14,15 @@ export class UpdateTaskDto {
   description?: string;
 
   @IsOptional()
-  @IsEnum(TaskStatus)
-  status?: TaskStatus;
-
-  @IsOptional()
   @IsEnum(TaskPriority)
   priority?: TaskPriority;
+
+  /** Moving a task to another column (or reordering within one) — see task-board.tsx's drag handler. */
+  @IsOptional()
+  @IsUUID()
+  columnId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  order?: number;
 }

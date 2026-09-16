@@ -18,4 +18,7 @@ export class CreateTaskDto {
 
   @IsUUID()
   projectId!: string;
+
+  @IsUUID()
+  columnId!: string;
 }
