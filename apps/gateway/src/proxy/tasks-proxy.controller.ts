@@ -8,11 +8,12 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
 /**
  * Thin reverse proxy for the domain resource routes owned by tasks-service
- * (/projects, /tasks, /comments). The gateway is the only service exposed
- * publicly; everything behind it is only reachable on the internal network.
+ * (/projects, /tasks, /comments, /columns). The gateway is the only
+ * service exposed publicly; everything behind it is only reachable on the
+ * internal network.
  */
 @UseGuards(JwtAuthGuard)
-@Controller(["projects", "tasks", "comments"])
+@Controller(["projects", "tasks", "comments", "columns"])
 export class TasksProxyController {
   private readonly baseUrl: string;
 
@@ -23,8 +24,12 @@ export class TasksProxyController {
     this.baseUrl = this.config.getOrThrow<string>("TASKS_SERVICE_URL");
   }
 
-  @All()
-  @All(":path")
+  // A single "zero or more segments" wildcard, not two stacked @All()
+  // decorators — combining an array controller prefix with more than one
+  // method-level path silently drops every path but the first when Nest
+  // computes the combination, so `/projects/:id` (or any sub-path) never
+  // actually got registered.
+  @All(":path?")
   async forward(@Req() req: Request, @Res() res: Response, @CurrentUser() user: RequestUser) {
     const targetPath = req.originalUrl;
     const response = await firstValueFrom(

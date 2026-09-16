@@ -72,6 +72,10 @@ jobs:
       JWT_REFRESH_SECRET: ci-refresh-secret
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
+      # Gateway's ProxyModule reads these at construction time (ConfigService.getOrThrow),
+      # even though the auth e2e suite never actually calls the proxied routes.
+      TASKS_SERVICE_URL: http://localhost:3001
+      AI_SERVICE_URL: http://localhost:3002
     steps:
       - uses: actions/checkout@v4
 
