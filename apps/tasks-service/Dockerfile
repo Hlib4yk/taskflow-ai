@@ -25,6 +25,9 @@ RUN pnpm turbo run build --filter=@taskflow/tasks-service
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Prisma's query engine links against libssl at runtime; node:20-alpine
+# doesn't ship it at all.
+RUN apk add --no-cache openssl
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 
 COPY --from=installer /app .
