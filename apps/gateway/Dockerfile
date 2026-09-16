@@ -22,6 +22,9 @@ COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
+# turbo prune --docker doesn't trace tsconfig.json's "extends" reference,
+# so the shared base config never makes it into out/full/ on its own.
+COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 RUN pnpm --filter @taskflow/gateway prisma:generate
 RUN pnpm turbo run build --filter=@taskflow/gateway
 
