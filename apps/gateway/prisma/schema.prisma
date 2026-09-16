@@ -1,10 +1,12 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/.prisma/client"
-  // "native" covers local dev (macOS/Linux glibc); the musl target is the
-  // Docker runtime (node:20-alpine, OpenSSL 3.x) — without it Prisma falls
-  // back to guessing the OpenSSL version at runtime and gets it wrong.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // "native" covers local dev (macOS/Linux glibc); the musl targets are the
+  // Docker runtime (node:20-alpine, OpenSSL 3.x) on both x64 and arm64
+  // hosts (Apple Silicon builds arm64 images by default) — without these,
+  // Prisma falls back to guessing the OpenSSL version at runtime and gets
+  // it wrong.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
