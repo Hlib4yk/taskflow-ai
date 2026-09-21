@@ -166,7 +166,13 @@ export function TaskBoard({ projectId }: { projectId: string }) {
           ))}
           <AddColumn onAdd={(name) => addColumn.mutate(name)} pending={addColumn.isPending} />
         </div>
-        <DragOverlay>{activeTask && <TaskCardBody task={activeTask} />}</DragOverlay>
+        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
+          {activeTask && (
+            <Card className="w-[16.5rem] rotate-3 cursor-grabbing p-3 shadow-xl ring-1 ring-slate-300">
+              <TaskCardBody task={activeTask} />
+            </Card>
+          )}
+        </DragOverlay>
       </DndContext>
     </div>
   );
@@ -306,11 +312,11 @@ function TaskCard({ task, open, onToggle }: { task: TaskDto; open: boolean; onTo
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.35 : 1,
   };
 
   return (
-    <li ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <li ref={setNodeRef} style={style} className="list-none" {...attributes} {...listeners}>
       <Card className="cursor-grab p-3 active:cursor-grabbing">
         <TaskCardBody task={task} />
         <button

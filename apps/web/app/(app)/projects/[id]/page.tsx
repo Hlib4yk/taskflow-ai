@@ -24,7 +24,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <TaskBoard projectId={id} />
         <AssistantPanel projectId={id} />
       </div>
