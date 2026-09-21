@@ -40,7 +40,12 @@ RUN apk add --no-cache openssl
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 
 COPY --from=installer /app .
+# `prisma migrate deploy` (run at start) downloads its schema engine into
+# this directory on first use, so the unprivileged user must own it.
+RUN chown -R nestjs:nodejs /app/node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines
 USER nestjs
 
 EXPOSE 3000
-CMD ["node", "--require", "./apps/gateway/dist/tracing.js", "apps/gateway/dist/main.js"]
+# Apply committed Prisma migrations before booting, so a fresh clone is one
+# `docker compose up` away from a working database schema.
+CMD ["sh", "-c", "./apps/gateway/node_modules/.bin/prisma migrate deploy --schema apps/gateway/prisma/schema.prisma && exec node --require ./apps/gateway/dist/tracing.js apps/gateway/dist/main.js"]

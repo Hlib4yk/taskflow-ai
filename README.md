@@ -1,261 +1,214 @@
 # TaskFlow AI
 
-An AI-native project & task management SaaS built as a microservices reference
-architecture: **Next.js + NestJS + TypeScript**, event-driven services over
-RabbitMQ, a real RAG pipeline over Qdrant, Docker for local dev, and
-Kubernetes manifests for deployment.
+A Trello-style project & task manager with an AI assistant, built as a
+microservices system: **Next.js + NestJS + TypeScript**, event-driven services
+over RabbitMQ, a real RAG pipeline over Qdrant, background jobs, full
+observability, and Kubernetes manifests. It runs end-to-end with one command.
 
-It's a working skeleton, not a toy — auth, CRUD, streaming AI chat and
-real-time notifications all actually run end-to-end via `docker compose up`.
+![Kanban board](docs/screenshots/board.png)
 
 ## What it does
 
-- Users create **projects**, add **tasks** and **comments**.
-- Every task/comment is embedded locally and indexed into **Qdrant**.
-- An **AI assistant** answers questions about a project ("what's blocking us
-  right now?") using retrieval-augmented generation over that index, streamed
-  token-by-token from Claude.
-- The assistant can also turn a goal into a list of **suggested subtasks**.
-- Task/comment/AI events are published to **RabbitMQ** and fanned out to a
-  **live activity feed** over WebSocket.
+- **Kanban boards.** Every project starts with *To Do / In Progress / Done*;
+  add, rename and delete your own columns, and drag cards between them
+  (`@dnd-kit`, optimistic updates, fractional ordering so a move touches one row).
+- **AI assistant.** Every task and comment is embedded locally
+  (transformers.js, no extra API key) and indexed into **Qdrant**. Ask "what's
+  blocking us?" and get an answer streamed token-by-token from **Claude**,
+  grounded in that project's own data (RAG). It can also break a goal into
+  suggested subtasks.
+- **Live activity.** Task and comment events flow through **RabbitMQ** to a
+  WebSocket feed, so a second browser tab updates in real time.
+- **Background jobs.** A BullMQ `reindex` job re-embeds a whole project on
+  demand; a repeatable `digest` job summarises recent activity per project.
+- **Secure auth.** JWT in httpOnly cookies with **rotating refresh tokens and
+  reuse detection**: replaying an already-used refresh token revokes the whole
+  token family.
+
+## Screenshots
+
+![Dragging a card between columns](docs/screenshots/board-dragging.png)
+
+| Traces (Jaeger) | Metrics (Grafana) |
+| --- | --- |
+| ![Jaeger](docs/screenshots/jaeger.png) | ![Grafana](docs/screenshots/grafana.png) |
+
+| Job queues (Bull Board) | API docs (Swagger) |
+| --- | --- |
+| ![Bull Board](docs/screenshots/bull-board.png) | ![Swagger](docs/screenshots/swagger.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Client
-        web[Next.js web]
-    end
-
-    web -->|REST + SSE, cookies| gateway
+    web[Next.js web] -->|REST + SSE, httpOnly cookies| gateway
     web -.->|WebSocket| notif[notifications-service]
 
     subgraph Internal network
-        gateway[gateway\nauth · BFF · proxy] --> tasks[tasks-service\nprojects/tasks/comments]
-        gateway --> ai[ai-service\nRAG + LLM]
+        gateway[gateway<br/>auth · BFF · proxy] --> tasks[tasks-service<br/>projects · columns · tasks · comments]
+        gateway --> ai[ai-service<br/>RAG + LLM + reindex jobs]
         tasks -->|events| rmq[(RabbitMQ)]
-        ai -->|events| rmq
         rmq --> ai
         rmq --> notif
         tasks --> pg[(Postgres)]
         gateway --> pg
         ai --> qdrant[(Qdrant)]
         ai --> claude[[Claude API]]
+        ai --> redis[(Redis / BullMQ)]
+        notif --> redis
     end
+
+    gateway & tasks & ai & notif -. OTLP traces .-> otel[otel-collector] --> jaeger[Jaeger]
+    gateway & tasks & ai & notif -. /metrics .-> prom[Prometheus] --> grafana[Grafana]
 ```
 
-- **gateway** is the only service exposed publicly. It owns auth (JWT in
-  httpOnly cookies, with rotating/revocable refresh tokens — see below) and
-  reverse-proxies REST + the chat SSE stream to the internal services,
-  forwarding the caller's user id via a trusted header.
-- **tasks-service** owns projects/tasks/comments (Postgres via Prisma) and
-  publishes domain events whenever something changes.
-- **ai-service** is a hybrid HTTP + RabbitMQ-consumer app: it indexes
-  incoming task/comment events into Qdrant (local embeddings via
-  transformers.js — no extra API key needed) and serves the chat/subtask
-  endpoints backed by Claude.
-- **notifications-service** bridges RabbitMQ events to connected browsers
-  over Socket.IO.
-- Each service owns its own database/schema (`authdb`, `tasksdb` on one
-  shared Postgres instance for the demo — split into separate instances for
-  real workloads).
+- **gateway** is the only public entry point: auth, and a reverse proxy for
+  REST plus the chat SSE stream, forwarding the caller's identity in a trusted
+  header.
+- **tasks-service** owns projects, columns, tasks and comments (Postgres via
+  Prisma) and publishes a domain event on every change.
+- **ai-service** is a hybrid HTTP + RabbitMQ-consumer app: it indexes events
+  into Qdrant, serves chat/subtask endpoints, and runs the reindex queue.
+- **notifications-service** bridges RabbitMQ events to browsers over Socket.IO
+  and runs the periodic digest job.
+- Each service owns its own database (`authdb`, `tasksdb`) — one Postgres
+  instance for the demo, separate instances for real workloads.
 
-## Stack
+## Tech stack
 
-| Layer            | Choice                                                        |
-| ----------------- | -------------------------------------------------------------- |
-| Frontend          | Next.js 15 (App Router), React 19, TanStack Query, Tailwind    |
-| Backend           | NestJS 10, TypeScript everywhere, Zod-validated shared DTOs    |
-| Data              | PostgreSQL + Prisma, Redis                                     |
-| Messaging         | RabbitMQ (`@nestjs/microservices`)                              |
-| Background jobs   | BullMQ (`@nestjs/bullmq`) — Redis-backed reindex queue (ai-service) + repeatable digest job (notifications-service), Bull Board admin UI |
-| AI / RAG          | Claude (`@anthropic-ai/sdk`), Qdrant, transformers.js embeddings |
-| Realtime          | Socket.IO                                                       |
-| Monorepo          | Turborepo + pnpm workspaces                                     |
-| Containers        | Docker (multi-stage, `turbo prune` per app)                     |
-| Orchestration     | Kubernetes + Kustomize (base + dev/prod overlays), HPA          |
-| CI                | GitHub Actions (lint, typecheck, unit + e2e + Playwright, docker build matrix) |
-| Testing           | Jest unit tests, Supertest e2e (gateway, tasks-service), Playwright golden paths (web) |
-| Observability     | OpenTelemetry traces (Jaeger), Prometheus metrics + Grafana, pino structured logging with request-id correlation, real `/health` checks |
+| Layer | Choice |
+| --- | --- |
+| Frontend | Next.js 15 (App Router), React 19, TanStack Query, Tailwind, dnd-kit |
+| Backend | NestJS 10, TypeScript, Zod-validated shared types |
+| Data | PostgreSQL + Prisma, Redis, Qdrant |
+| Messaging | RabbitMQ (`@nestjs/microservices`), BullMQ |
+| AI / RAG | Claude (`@anthropic-ai/sdk`), Qdrant, transformers.js embeddings |
+| Realtime | Socket.IO |
+| Observability | OpenTelemetry → Jaeger, Prometheus + Grafana, pino logs with request-id correlation, Terminus health checks |
+| Testing | Jest (unit), Supertest (e2e), Playwright (browser) |
+| Monorepo | Turborepo + pnpm workspaces |
+| Delivery | Docker (multi-stage, `turbo prune`), Kubernetes + Kustomize, GitHub Actions |
 
-## Repo layout
+## Quick start
 
-```
-apps/
-  web/                    Next.js frontend
-  gateway/                Auth + BFF + reverse proxy (public entrypoint)
-  tasks-service/          Projects/tasks/comments (Prisma + Postgres)
-  ai-service/             RAG pipeline + Claude chat/subtask generation
-  notifications-service/  RabbitMQ → WebSocket bridge
-packages/
-  types/                  Shared TS types & Zod schemas (DTOs, events)
-infra/
-  postgres/               Multi-database init script
-  observability/          otel-collector/Prometheus/Grafana config for docker compose
-  k8s/base/               Kubernetes manifests
-  k8s/overlays/{dev,prod} Kustomize overlays
-```
-
-## Getting started
+Requirements: Docker Desktop (8 GB+ RAM recommended — it runs 13 containers)
+and an [Anthropic API key](https://console.anthropic.com) for the AI features.
 
 ```bash
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY at minimum — everything else has sane local defaults
+# put your key in ANTHROPIC_API_KEY (everything else has working local defaults)
 
-pnpm install
-pnpm docker:up        # builds + starts every service, Postgres, Redis, RabbitMQ, Qdrant
-
-# first boot only — apply Prisma migrations
-pnpm --filter @taskflow/gateway prisma:migrate:dev
-pnpm --filter @taskflow/tasks-service prisma:migrate:dev
+docker compose up --build      # or: pnpm install && pnpm docker:up
 ```
 
-Then open:
+Database migrations are applied automatically when the gateway and
+tasks-service containers start. Once it is up, open **http://localhost:3100**,
+register, and create a project. Everything except the AI answers works without
+an API key.
 
-- **http://localhost:3100** — the app (register an account to start)
-- **http://localhost:3000/docs** — gateway Swagger
-- **http://localhost:15672** — RabbitMQ management UI
-- **http://localhost:6333/dashboard** — Qdrant dashboard
-- **http://localhost:16686** — Jaeger (distributed traces)
-- **http://localhost:9090** — Prometheus
-- **http://localhost:3300** — Grafana (anonymous viewer access, pre-provisioned dashboard)
-- **http://localhost:3002/admin/queues** — Bull Board for ai-service's `reindex` queue
-- **http://localhost:3003/admin/queues** — Bull Board for notifications-service's `digest` queue
-  (both behind HTTP Basic Auth — `BULL_BOARD_USER` / `BULL_BOARD_PASSWORD`, default `admin`/`admin`)
+| URL | What |
+| --- | --- |
+| http://localhost:3100 | The app |
+| http://localhost:3000/docs | Gateway Swagger |
+| http://localhost:16686 | Jaeger (traces) |
+| http://localhost:3300 | Grafana (pre-provisioned dashboard, anonymous viewer) |
+| http://localhost:9090 | Prometheus |
+| http://localhost:15672 | RabbitMQ UI (`taskflow` / `taskflow`) |
+| http://localhost:6333/dashboard | Qdrant |
+| http://localhost:3002/admin/queues | Bull Board — `reindex` queue (`admin` / `admin`) |
+| http://localhost:3003/admin/queues | Bull Board — `digest` queue (`admin` / `admin`) |
 
-For day-to-day development without Docker, `pnpm dev` runs every app via
-Turborepo (point `.env` at `localhost` instead of container hostnames first).
+Stop with `docker compose down` (data volumes are kept; add `-v` to wipe them).
+
+### Developing the frontend
+
+The Docker image is a production build, so UI changes need a rebuild. For fast
+iteration run everything except the web container in Docker and the frontend
+with hot reload:
+
+```bash
+docker compose up -d --build
+docker compose stop web
+pnpm --filter @taskflow/web dev      # http://localhost:3100
+```
 
 ## Testing
 
 ```bash
-pnpm test                                         # unit tests, no infra needed
-pnpm --filter @taskflow/gateway test:e2e          # Supertest, needs Postgres reachable
-pnpm --filter @taskflow/tasks-service test:e2e    # Supertest, needs Postgres + RabbitMQ
-pnpm --filter web test:e2e                        # Playwright, needs the full compose stack
+pnpm test                                          # unit tests, no infrastructure needed
+pnpm --filter @taskflow/gateway test:e2e           # Supertest against real Postgres
+pnpm --filter @taskflow/tasks-service test:e2e     # Postgres + RabbitMQ
+pnpm --filter @taskflow/web test:e2e               # Playwright, needs the compose stack
 ```
 
-- **Unit tests** mock `PrismaService`/`ClientProxy`/the Anthropic SDK and
-  cover the core business logic (auth, projects/tasks/comments, RAG
-  indexing/retrieval, LLM response parsing, the RabbitMQ→WebSocket bridge).
-- **e2e tests** boot a real Nest app against a real Postgres (and RabbitMQ
-  for tasks-service) — run `pnpm docker:up` first, or point the
-  `*_DATABASE_URL`/`RABBITMQ_URL` env vars at any reachable instance.
-- **Playwright** drives the actual browser against `pnpm docker:up`
-  (register → create project → create task → chat with the AI assistant,
-  the last one stubbed at the network layer so it doesn't need a live
-  `ANTHROPIC_API_KEY`).
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, unit and e2e tests
+(with Postgres and RabbitMQ service containers), a Playwright job against the
+full compose stack, and a Docker build matrix for all five images.
 
-All three run in CI (`.github/workflows/ci.yml`) on every push/PR.
+## How the interesting parts work
 
-## Observability
+**Observability.** Every service loads `tracing.js` before anything else
+(`node --require`), auto-instrumenting http/express/amqplib/pino and exporting
+OTLP to an OpenTelemetry Collector → Jaeger, so one request through the gateway
+appears as a single trace across the RabbitMQ hop into the async consumers.
+`/metrics` (Node process metrics) feeds Prometheus and a provisioned Grafana
+dashboard. Logs share an `x-request-id` the gateway generates and forwards.
+`/health` runs real checks (Postgres, Qdrant, RabbitMQ, heap headroom), not just
+"the process is up". Tracing is baked into the Docker image, not `pnpm dev`.
 
-- **Traces**: every service loads `dist/tracing.js` (`node --require`, see
-  each Dockerfile's `CMD`) before anything else, auto-instrumenting
-  http/express/amqplib/pino via `@opentelemetry/auto-instrumentations-node`
-  and exporting OTLP to `otel-collector`, which forwards to **Jaeger**. A
-  request through the gateway shows up as one trace spanning tasks-service,
-  the RabbitMQ publish, and ai-service's async consumer.
-- **Metrics**: `@willsoto/nestjs-prometheus` exposes `/metrics` (Node
-  process CPU/memory/event-loop-lag/heap) on every service; **Prometheus**
-  scrapes all four, **Grafana** ships with that datasource plus a
-  pre-provisioned "TaskFlow AI — service overview" dashboard.
-- **Logs**: pino structured logging everywhere, correlated by an
-  `x-request-id` the gateway generates (or reuses, if the caller already
-  sent one) and forwards to whichever service it proxies to — grep that id
-  across services to follow one browser request end-to-end.
-- **Health**: `/health` on every service runs real checks (Postgres via
-  Prisma, Qdrant, RabbitMQ connectivity, heap headroom) via
-  `@nestjs/terminus`, not just "the HTTP server is up."
-- Not wired into `pnpm dev` (`nest start --watch`) — tracing's `--require`
-  preload only applies to the compiled Docker image; run `pnpm docker:up`
-  to see any of this.
+**Auth.** Access tokens are short-lived stateless JWTs. Every `/auth/refresh`
+rotates the refresh token (tracked in a `RefreshToken` table, linked by
+`familyId`); presenting one that was already rotated away is treated as theft
+and revokes the entire family. Logout revokes server-side too.
 
-## Background jobs
+**Kanban data model.** A task's column *is* its status — there is no separate
+status enum. Tasks carry a float `order`; dropping a card computes the midpoint
+between its new neighbours, so a move updates exactly one row. Deleting a
+column that still has tasks is refused (409) rather than cascading.
 
-- **Reindex** (ai-service): `POST /projects/:id/reindex` through the gateway
-  (or the "Reindex" button on a project page) enqueues a BullMQ job that
-  fetches every task/comment for that project straight from tasks-service
-  and re-embeds them into Qdrant — the kind of bulk work that shouldn't
-  block a request, per the scaffold's own original "Where to go next" list.
-- **Digest** (notifications-service): a repeatable job (`DIGEST_INTERVAL_MS`,
-  default 60s) drains a Redis-backed per-project activity counter — filled
-  in by the same RabbitMQ event handlers that already drive the live
-  activity feed — and emits a `digest.ready` event over the existing
-  Socket.IO project room. It's a stand-in for a real digest-email provider,
-  not a fake email send; the frontend's "Live activity" list already
-  renders it alongside `task.created`/`comment.created`.
-- Both queues get a **Bull Board** admin UI at `/admin/queues` (Basic Auth,
-  see `BULL_BOARD_USER`/`BULL_BOARD_PASSWORD`) for inspecting job status,
-  retries, and failures.
-- This is also the first real use of the Redis instance the compose stack
-  always provisioned — previously declared but never wired into any service.
-
-## Auth
-
-Access tokens are still short-lived, stateless JWTs (15m default) — no DB
-hit on every request. Refresh tokens are where the hardening lives:
-
-- Every `/auth/refresh` call **rotates** the refresh token: the presented
-  one is revoked and a new one is issued in its place, tracked in a
-  `RefreshToken` Postgres table (`familyId` links every token descended
-  from one login).
-- **Reuse detection**: presenting a refresh token that's already been
-  rotated away (i.e. used a second time) is treated as a strong signal of
-  theft — the entire token family is revoked immediately, forcing the
-  legitimate user to log in again rather than silently trusting whichever
-  copy shows up first.
-- `/auth/logout` revokes the current refresh token server-side, not just
-  the client-side cookie.
-- See `apps/gateway/src/auth/auth.service.ts` and the reuse-detection e2e
-  test in `apps/gateway/test/auth.e2e-spec.ts` for the exact flow.
+**RabbitMQ fan-out.** `@nestjs/microservices`' RMQ transport gives one queue
+with competing consumers, not pub/sub. Since ai-service and
+notifications-service each need every event, tasks-service publishes to one
+dedicated queue per subscriber — simple and correct at this scale; swap for a
+topic exchange when adding consumers.
 
 ## Deploying to Kubernetes
 
 ```bash
-kubectl apply -k infra/k8s/overlays/dev   # or overlays/prod
+kubectl apply -k infra/k8s/overlays/dev      # or overlays/prod
 ```
 
-`infra/k8s/base/secret.yaml` ships with placeholder values — replace them
-(ideally via sealed-secrets / your cloud's secret manager, not plaintext in
-git) before applying anywhere but a throwaway cluster. The ingress uses
-host-based routing (`app.`, `api.`, `realtime.taskflow.local`); note that
-`NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_NOTIFICATIONS_URL` are baked into the
-web image at **build time** (Next.js inlines `NEXT_PUBLIC_*` vars), so the
-Docker build args must already match whatever hosts you deploy behind.
+Manifests cover every service plus the observability stack, with HPAs, probes
+and dev/prod Kustomize overlays. `infra/k8s/base/secret.yaml` contains
+placeholders — replace them (sealed-secrets / your cloud's secret manager)
+before applying anywhere real. `notifications-service` runs as a single replica
+on purpose: scaling Socket.IO across pods needs a shared adapter, which is not
+wired up here.
 
-## Notable design decisions
+## Repository layout
 
-- **RabbitMQ fan-out**: `@nestjs/microservices`' default RMQ transport gives
-  you a single queue with competing consumers, not pub/sub. Since both
-  `ai-service` and `notifications-service` need every event independently,
-  `tasks-service` publishes to one dedicated queue per subscriber instead of
-  routing through a shared exchange — simple and correct for this scale;
-  swap for a topic exchange if you add more consumers.
-- **`notifications-service` runs as a single replica** — Socket.IO
-  connections pin to one pod, so scaling it needs a shared adapter (e.g. the
-  Socket.IO Redis adapter) to fan events out across pods. Not wired up here
-  to keep the manifest honest about what it actually does.
-- **Local embeddings**: RAG indexing/retrieval uses transformers.js
-  (`all-MiniLM-L6-v2`) instead of a hosted embeddings API, so the whole
-  pipeline needs only one LLM key (Anthropic) rather than two providers.
+```
+apps/
+  web/                    Next.js frontend (Kanban board, AI panel)
+  gateway/                Auth + BFF + reverse proxy (public entry point)
+  tasks-service/          Projects / columns / tasks / comments
+  ai-service/             RAG pipeline, Claude chat, reindex jobs
+  notifications-service/  RabbitMQ → WebSocket bridge, digest job
+packages/
+  types/                  Shared TypeScript types & Zod schemas
+infra/
+  observability/          Collector, Prometheus, Grafana provisioning
+  k8s/                    Kubernetes base + dev/prod overlays
+  postgres/               Multi-database init script
+```
 
-## Where to go next
+## Roadmap
 
-The scaffold intentionally stops at "a real, working system" rather than a
-finished product. Natural next additions, roughly in the order most teams
-reach for them:
+Deliberately not built yet: GitOps (ArgoCD) and infrastructure-as-code
+(Terraform for a local `kind` cluster), OAuth / social login, team
+collaboration (a project currently has a single owner), and column
+reordering.
 
-- **GitOps**: ArgoCD or Flux watching `infra/k8s`, instead of `kubectl apply`
-  by hand; Renovate/Dependabot for dependency PRs.
-- **IaC**: Terraform or Pulumi for the actual cluster/managed Postgres/DNS,
-  rather than assuming a cluster already exists.
-- **OAuth/social login**: Auth.js or Clerk if you don't want to own password
-  storage — refresh-token rotation and reuse detection are already in place
-  for the credentials flow (see "Auth" above).
-- **API layer**: tRPC is worth considering instead of hand-rolled REST DTOs
-  if the frontend and gateway stay in the same monorepo long-term — you'd
-  trade the proxy/DTO boilerplate for end-to-end type inference.
-- **Product surface**: Storybook for the component library, Stripe for
-  billing, PostHog/GrowthBook for analytics and feature flags, Sentry for
-  error tracking.
+## License
+
+[MIT](LICENSE)

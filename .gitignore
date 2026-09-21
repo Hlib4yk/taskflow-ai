@@ -15,3 +15,8 @@ prisma/generated
 .vscode/*
 !.vscode/extensions.json
 pnpm-lock.yaml.bak
+
+# local tooling / editor state
+.claude/
+playwright-report/
+test-results/
